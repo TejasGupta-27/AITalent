@@ -166,8 +166,8 @@ function App() {
     <div className="app chat-app">
       <div className="chat-header">
         <div className="header-content">
-          <h1>{t('title')}</h1>
-          <p className="subtitle">{t('subtitle')}</p>
+          <h1>{t('AI Talent Force')}</h1>
+          <p className="subtitle">{t('Weather with AI')}</p>
         </div>
         <div className="header-actions">
           <select

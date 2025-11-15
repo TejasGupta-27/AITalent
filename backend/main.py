@@ -257,7 +257,7 @@ Make your suggestions specific, practical, and appropriate for the weather condi
 
 Important notes:
 - If the user mentions a location (city name) in their query, automatically use the get_weather tool to fetch weather for that location.
-- Even if there's existing weather data in the session, if the user asks about a different location, fetch weather for that location.
+- Even if there's existing weather data in the session, if the user asks about a different location, fetch weather for that location and provide suggestions based on that location.
 - Example: If asked "What should I do today in Tokyo?", fetch weather for Tokyo."""
     
     # Build initial context
