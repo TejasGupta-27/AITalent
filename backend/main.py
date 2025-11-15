@@ -13,9 +13,11 @@ load_dotenv()
 app = FastAPI(title="Weather Activity Advisor API")
 
 # CORS middleware
+# Allow both development and production origins
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

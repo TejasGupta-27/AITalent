@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (for frontend)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Python (for backend)
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+
+# Build outputs
+dist/
+build/
+*.egg-info
+
