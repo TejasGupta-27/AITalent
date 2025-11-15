@@ -197,16 +197,36 @@ Both methods use Deepgram AI for transcription, which supports 100+ audio format
 
 ## Production Deployment
 
-### Backend
+### Quick Deploy for Demo (Recommended)
+
+**See `QUICK_DEPLOY.md` for step-by-step instructions.**
+
+**Recommended Setup:**
+- **Frontend**: Deploy on Vercel (free, fast)
+- **Backend**: Deploy on Railway or Render (free tiers available)
+
+**Quick Steps:**
+1. Deploy backend on Railway/Render (see `QUICK_DEPLOY.md`)
+2. Deploy frontend on Vercel (see `QUICK_DEPLOY.md`)
+3. Set `VITE_API_URL` environment variable in Vercel
+4. Update `CORS_ORIGINS` in backend to include Vercel URL
+
+### Manual Deployment
+
+#### Backend
 - Use a production ASGI server like Gunicorn with Uvicorn workers
 - Set up proper CORS origins for your frontend domain
 - Use environment variables for API keys
 - Consider using Redis or a database for session storage instead of in-memory
 
-### Frontend
+#### Frontend
 - Build the production bundle: `npm run build`
 - Serve the `dist` folder with a web server (Nginx, Apache, etc.)
 - Update `VITE_API_URL` to point to your production API
+
+### Docker Deployment
+
+See `DOCKER.md` for Docker Compose deployment instructions.
 
 ## License
 
