@@ -159,8 +159,8 @@ def transcribe_audio_deepgram(audio_bytes: bytes, audio_format: Optional[str] = 
         
         # Deepgram API parameters
         params = {
-            "model": "nova-2",
-            "language": language,
+            "model": "nova-3",
+            "detect_language": "true",
             "smart_format": "true",
             "punctuate": "true"
         }
