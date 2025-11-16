@@ -328,14 +328,15 @@ Local time: {location['localtime']}]
     
     try:
         # Call Groq API with tool support
-        max_iterations = 3  # Prevent infinite loops
+        max_iterations = 5  # Increased to allow for tool calls + response
         iteration = 0
         final_weather_data = weather_data
-        
+        tool_calls_executed = False  # Track if we've executed tools
+
         while iteration < max_iterations:
             try:
-                # Try with tool calling if enabled
-                if auto_fetch_weather:
+                # After executing tool calls once, disable tool_choice to force final response
+                if auto_fetch_weather and not tool_calls_executed:
                     response = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=messages,
@@ -345,6 +346,7 @@ Local time: {location['localtime']}]
                         max_tokens=1000
                     )
                 else:
+                    # Either auto_fetch disabled or we already executed tools - get final response
                     response = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=messages,
@@ -363,26 +365,26 @@ Local time: {location['localtime']}]
                     auto_fetch_weather = False  # Disable tool calling for this request
                 else:
                     raise tool_error
-            
+
             message = response.choices[0].message
-            
+
             # Check if the model wants to call a tool
-            if hasattr(message, 'tool_calls') and message.tool_calls and auto_fetch_weather:
+            if hasattr(message, 'tool_calls') and message.tool_calls and auto_fetch_weather and not tool_calls_executed:
                 # Add assistant's message with tool calls
                 messages.append(message)
-                
+
                 # Execute tool calls
                 for tool_call in message.tool_calls:
                     if tool_call.function.name == "get_weather":
                         import json
                         args = json.loads(tool_call.function.arguments)
                         location_name = args.get("location")
-                        
+
                         try:
                             # Fetch weather for the requested location
                             fetched_weather = fetch_weather(location_name)
                             final_weather_data = fetched_weather
-                            
+
                             # Format weather data for the model
                             loc = fetched_weather['location']
                             curr = fetched_weather['current']
@@ -396,7 +398,7 @@ Weather in {loc['name']}, {loc['country']}:
 - Precipitation: {curr['precip_mm']} mm
 - Local time: {loc['localtime']}
 """
-                            
+
                             # Add tool result to messages
                             messages.append({
                                 "role": "tool",
@@ -412,20 +414,22 @@ Weather in {loc['name']}, {loc['country']}:
                                 "name": tool_call.function.name,
                                 "content": f"Error fetching weather for {location_name}: {str(e)}"
                             })
-                
+
+                tool_calls_executed = True  # Mark that we've executed tools
                 iteration += 1
                 continue  # Continue the loop to get the final response
             
             # No tool calls - check if we should extract location from query as fallback
             if not hasattr(message, 'tool_calls') or not message.tool_calls:
                 # Try to extract location from query if no weather data or query mentions a location
-                if user_query and (not weather_data or iteration == 0):
+                # Only do this once (iteration == 0) and if tools weren't already executed
+                if user_query and iteration == 0 and not tool_calls_executed and (not weather_data):
                     extracted_location = extract_location_from_query(user_query, language)
                     if extracted_location:
                         try:
                             fetched_weather = fetch_weather(extracted_location)
                             final_weather_data = fetched_weather
-                            
+
                             # Update context with new weather
                             loc = fetched_weather['location']
                             curr = fetched_weather['current']
@@ -439,17 +443,18 @@ Weather in {loc['name']}, {loc['country']}:
 - Precipitation: {curr['precip_mm']} mm
 - Local time: {loc['localtime']}
 """
-                            
+
                             # Update the prompt with new weather and ask again
                             if language == 'ja':
                                 updated_prompt = f"{weather_info}\n\nユーザーの質問: {user_query}\n\n上記の天気を考慮して、詳細な提案を提供してください。"
                             else:
                                 updated_prompt = f"{weather_info}\n\nUser query: {user_query}\n\nProvide detailed suggestions considering the weather above."
-                            
+
                             messages = [
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": updated_prompt}
                             ]
+                            tool_calls_executed = True  # Mark as executed to prevent further iterations
                             iteration += 1
                             continue
                         except Exception:
