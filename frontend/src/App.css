@@ -265,6 +265,10 @@ body {
   color: #666;
 }
 
+.weather-in-message {
+  margin-top: 0.75rem;
+}
+
 .loading-dots {
   display: flex;
   gap: 0.5rem;

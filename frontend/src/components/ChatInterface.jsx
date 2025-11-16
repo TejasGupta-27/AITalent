@@ -131,11 +131,18 @@ function ChatInterface({ chatHistory, onSendMessage, placeholder, language, load
               <span className="message-text">{message.content}</span>
             </div>
           ) : (
-            <div className="assistant-bubble">
-              <div className="message-text" dangerouslySetInnerHTML={{ 
-                __html: message.content.replace(/\n/g, '<br>') 
-              }} />
-            </div>
+            <>
+              <div className="assistant-bubble">
+                <div className="message-text" dangerouslySetInnerHTML={{ 
+                  __html: message.content.replace(/\n/g, '<br>') 
+                }} />
+              </div>
+              {message.weather && (
+                <div className="weather-in-message">
+                  <WeatherDisplay weather={message.weather} compact={true} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

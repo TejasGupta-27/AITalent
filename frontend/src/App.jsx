@@ -67,41 +67,27 @@ function App() {
 
     // Check if we need to create a session first
     if (!sessionId) {
-      // Try to extract location from message
-      const extractedLocation = extractLocationFromMessage(query)
-      const defaultLocation = extractedLocation || (language === 'ja' ? 'Tokyo' : 'New York')
-      
       setLoading(true)
       try {
-        // Create session with weather
-        const weatherResponse = await axios.post(
-          `${API_BASE_URL}/api/weather-with-suggestions`,
-          { location: defaultLocation },
+        // Create a simple chat session without forcing weather
+        const sessionResponse = await axios.post(
+          `${API_BASE_URL}/api/session/create`,
+          null,
           { params: { language } }
         )
-        setSessionId(weatherResponse.data.session_id)
-        setWeather(weatherResponse.data.weather)
-        
-        // Add weather card to chat
-        const weatherMessage = {
-          role: 'assistant',
-          content: `🌤️ Weather for ${weatherResponse.data.weather.location}`,
-          type: 'weather',
-          weather: weatherResponse.data.weather
-        }
-        setChatHistory(prev => [...prev, weatherMessage])
-        
-        // Now send the user's query
-        await sendQueryToAPI(weatherResponse.data.session_id, query)
+        const newSessionId = sessionResponse.data.session_id
+        setSessionId(newSessionId)
+
+        // Now send the user's query - backend will fetch weather if needed
+        await sendQueryToAPI(newSessionId, query)
       } catch (error) {
-        console.error('Error fetching weather:', error)
+        console.error('Error creating session:', error)
         const errorMessage = {
           role: 'assistant',
-          content: error.response?.data?.detail || 'Error fetching weather data',
+          content: error.response?.data?.detail || 'Error creating chat session',
           type: 'error'
         }
         setChatHistory(prev => [...prev, errorMessage])
-      } finally {
         setLoading(false)
       }
     } else {
@@ -118,25 +104,25 @@ function App() {
         query,
         language
       })
-      
+
       // Update weather if agent automatically fetched it for a different location
       if (response.data.weather_updated && response.data.weather) {
         setWeather(response.data.weather)
-        // Add weather update message
-        const weatherUpdate = {
-          role: 'assistant',
-          content: `🌤️ Weather updated for ${response.data.weather.location}`,
-          type: 'weather',
-          weather: response.data.weather
-        }
-        setChatHistory(prev => [...prev, weatherUpdate])
       }
-      
-      // Update chat history with the response
-      setChatHistory(response.data.chat_history.map(msg => ({
-        ...msg,
-        type: msg.role === 'assistant' ? 'text' : 'text'
-      })))
+
+      // Add assistant's response with weather data if available
+      const assistantMessage = {
+        role: 'assistant',
+        content: response.data.suggestion,
+        type: 'text'
+      }
+
+      // Attach weather data to the message if weather was updated
+      if (response.data.weather_updated && response.data.weather) {
+        assistantMessage.weather = response.data.weather
+      }
+
+      setChatHistory(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error getting suggestions:', error)
       const errorMessage = {

@@ -21,6 +21,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    
 )
 
 # API Keys
@@ -218,16 +219,16 @@ def extract_location_from_query(query: str, language: str = "en") -> Optional[st
     return None
 
 
-def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language: str = "en", auto_fetch_weather: bool = True):
-    """Get AI-powered suggestions based on weather with tool calling support"""
-    
+def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language: str = "en", auto_fetch_weather: bool = True, chat_history: Optional[List] = None):
+    """Get AI-powered conversational responses with weather tool support"""
+
     # Define the weather tool
     tools = [
         {
             "type": "function",
             "function": {
                 "name": "get_weather",
-                "description": "Get current weather information for a specific location. Use this tool when the user mentions a location (city name) in their query, even if it's different from the current session location.",
+                "description": "Get current weather information for a specific location. Use this tool ONLY when the user asks about weather, activities, or things related to weather conditions in a specific location.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -241,57 +242,89 @@ def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language:
             }
         }
     ]
-    
+
     # Build system prompt based on language
     if language == 'ja':
-        system_prompt = """あなたは親切な天気アドバイザーです。現在の天気に基づいて、アクティビティ、外出、ファッション、音楽、スポーツなどの提案を提供します。
-提案は具体的で、実用的で、天気条件に適切なものにしてください。
+        system_prompt = """あなたは親切でフレンドリーな会話型AIアシスタントです。ユーザーと自然に会話し、質問に答えます。
 
-重要な注意事項：
-- ユーザーが質問の中で場所（都市名）を言及した場合、その場所の天気を自動的に取得するためにget_weatherツールを使用してください。
-- セッションに既存の天気データがあっても、ユーザーが別の場所について尋ねている場合は、その場所の天気を取得してください。
-- 例：「東京で今日何をすべきか？」と聞かれたら、東京の天気を取得してください。"""
+あなたの特別な能力：
+- 世界中の都市のリアルタイム天気情報を取得できます
+- 天気に基づいて、アクティビティ、服装、外出のアイデアを提案できます
+
+重要な指示：
+1. **普通の会話**: 挨拶や一般的な質問には、自然に会話してください。天気に関係ない場合は、天気の話をしないでください。
+2. **天気を使うタイミング**: ユーザーが天気、活動、服装、外出プランについて尋ねた時だけ、get_weatherツールを使用してください。
+3. **簡潔に**: 短く、フレンドリーに、会話的に応答してください。
+
+例：
+- ユーザー: "こんにちは" → あなた: "こんにちは！何かお手伝いできることはありますか？"
+- ユーザー: "東京の天気は？" → あなた: get_weatherツールを使用して天気を取得
+- ユーザー: "今日何する？" → あなた: get_weatherツールを使用（場所がわかる場合）"""
     else:
-        system_prompt = """You are a helpful weather advisor. Based on current weather conditions, you provide suggestions for activities, outings, fashion, music, sports, and more.
-Make your suggestions specific, practical, and appropriate for the weather conditions.
+        system_prompt = """You are a friendly and helpful conversational AI assistant. You chat naturally with users and answer their questions.
 
-Important notes:
-- If the user mentions a location (city name) in their query, automatically use the get_weather tool to fetch weather for that location.
-- Even if there's existing weather data in the session, if the user asks about a different location, fetch weather for that location and provide suggestions based on that location.
-- Example: If asked "What should I do today in Tokyo?", fetch weather for Tokyo."""
+Your special abilities:
+- You can fetch real-time weather information for any city in the world
+- You can provide activity, outfit, and outing suggestions based on weather
+
+Important instructions:
+1. **Normal conversation**: For greetings and general questions, respond naturally. Don't force weather into every conversation.
+2. **When to use weather**: Only use the get_weather tool when users ask about weather, activities, what to wear, or plans that depend on weather conditions.
+3. **Be concise**: Keep responses short, friendly, and conversational.
+
+Examples:
+- User: "hi" → You: "Hi! How can I help you today?"
+- User: "what's the weather in Tokyo?" → You: Use get_weather tool to fetch weather
+- User: "what should I do today?" → You: Use get_weather tool if you know the location, or ask for their location"""
     
-    # Build initial context
+    # Build messages with chat history
+    messages = [{"role": "system", "content": system_prompt}]
+
+    # Add chat history for context
+    if chat_history:
+        for msg in chat_history[-10:]:  # Keep last 10 messages for context
+            messages.append({
+                "role": msg['role'],
+                "content": msg['content']
+            })
+
+    # Add current weather context if available (as system knowledge, not forcing it into conversation)
     weather_context = ""
     if weather_data:
         location = weather_data['location']
         current = weather_data['current']
         weather_context = f"""
-Current weather in {location['name']}, {location['country']}:
-- Temperature: {current['temp_c']}°C (feels like {current['feelslike_c']}°C)
-- Condition: {current['condition']['text']}
-- Humidity: {current['humidity']}%
-- Wind: {current['wind_kph']} km/h
-- UV Index: {current['uv']}
-- Precipitation: {current['precip_mm']} mm
-- Local time: {location['localtime']}
+
+[Available weather data for {location['name']}, {location['country']}:
+Temperature: {current['temp_c']}°C (feels like {current['feelslike_c']}°C)
+Condition: {current['condition']['text']}
+Humidity: {current['humidity']}%
+Wind: {current['wind_kph']} km/h
+UV Index: {current['uv']}
+Precipitation: {current['precip_mm']} mm
+Local time: {location['localtime']}]
 """
-    
-    # Build user prompt
+        # Add weather context to system message if there's existing data
+        messages[0]["content"] += weather_context
+
+    # Add user's current query
     if user_query:
-        if language == 'ja':
-            prompt = f"{weather_context}\n\nユーザーの質問: {user_query}\n\n上記の天気を考慮して、詳細な提案を提供してください。質問に場所が含まれている場合は、その場所の天気を取得してください。"
-        else:
-            prompt = f"{weather_context}\n\nUser query: {user_query}\n\nProvide detailed suggestions considering the weather above. If the query mentions a location, fetch weather for that location."
+        messages.append({
+            "role": "user",
+            "content": user_query
+        })
     else:
+        # Initial suggestion when weather is first fetched
         if language == 'ja':
-            prompt = f"{weather_context}\n\nこの天気に基づいて、今日のアクティビティ、服装、外出のアイデアを提案してください。"
+            messages.append({
+                "role": "user",
+                "content": "この天気に基づいて、簡単なアクティビティや服装の提案をしてください。"
+            })
         else:
-            prompt = f"{weather_context}\n\nBased on this weather, suggest activities, outfit ideas, and outing recommendations for today."
-    
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt}
-    ]
+            messages.append({
+                "role": "user",
+                "content": "Based on this weather, give me some quick activity and outfit suggestions."
+            })
     
     try:
         # Call Groq API with tool support
@@ -484,28 +517,41 @@ def get_weather(request: WeatherRequest):
 
 @app.post("/api/suggestions")
 def get_suggestions(request: ChatRequest):
-    """Get AI suggestions based on weather and optional query with automatic weather fetching"""
+    """Get AI conversational responses with weather tool support"""
     session_id = request.session_id
-    
+
     # Get or create session
     if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found. Please fetch weather first.")
-    
+        # Create a new session if it doesn't exist (allow chatting without weather initially)
+        import uuid
+        sessions[session_id] = {
+            'weather_data': None,
+            'chat_history': [],
+            'language': request.language
+        }
+
     session = sessions[session_id]
     weather_data = session.get('weather_data')
-    
-    # Allow suggestions even without initial weather - agent can fetch it
-    result = get_ai_suggestions(weather_data, request.query, request.language, auto_fetch_weather=True)
-    
+    chat_history = session.get('chat_history', [])
+
+    # Get AI response with chat history context
+    result = get_ai_suggestions(
+        weather_data,
+        request.query,
+        request.language,
+        auto_fetch_weather=True,
+        chat_history=chat_history
+    )
+
     # Update session with new weather data if agent fetched it
     if result.get('weather_data') and result['weather_data'] != weather_data:
         session['weather_data'] = result['weather_data']
         # Format the new weather for display
         session['formatted_weather'] = format_weather_data(result['weather_data'])
-    
+
     suggestion = result['content']
-    
-    # If there's a query, add to chat history
+
+    # Add to chat history
     if request.query:
         if 'chat_history' not in session:
             session['chat_history'] = []
@@ -517,18 +563,18 @@ def get_suggestions(request: ChatRequest):
             'role': 'assistant',
             'content': suggestion
         })
-    
+
     # Return updated weather if it was fetched
     response = {
         "suggestion": suggestion,
         "chat_history": session.get('chat_history', [])
     }
-    
+
     # Include updated weather if it changed
     if result.get('weather_data') and result['weather_data'] != weather_data:
         response['weather'] = format_weather_data(result['weather_data'])
         response['weather_updated'] = True
-    
+
     return response
 
 
@@ -536,28 +582,52 @@ def get_suggestions(request: ChatRequest):
 def get_weather_with_suggestions(request: WeatherRequest, language: str = "en", session_id: Optional[str] = None):
     """Fetch weather and get initial AI suggestions"""
     import uuid
-    
+
     weather_data = fetch_weather(request.location)
     formatted = format_weather_data(weather_data)
-    
+
     # Create or update session
     if not session_id:
         session_id = str(uuid.uuid4())
-    
+
     sessions[session_id] = {
         'weather_data': weather_data,
         'chat_history': [],
         'language': language
     }
-    
-    # Get initial suggestion
-    result = get_ai_suggestions(weather_data, None, language, auto_fetch_weather=False)
+
+    # Get initial suggestion with chat history
+    result = get_ai_suggestions(
+        weather_data,
+        None,
+        language,
+        auto_fetch_weather=False,
+        chat_history=[]
+    )
     suggestion = result['content'] if isinstance(result, dict) else result
-    
+
     return {
         "session_id": session_id,
         "weather": formatted,
         "suggestion": suggestion
+    }
+
+
+@app.post("/api/session/create")
+def create_session(language: str = "en"):
+    """Create a new chat session without requiring weather data"""
+    import uuid
+
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {
+        'weather_data': None,
+        'chat_history': [],
+        'language': language
+    }
+
+    return {
+        "session_id": session_id,
+        "message": "Session created successfully. You can start chatting!"
     }
 
 
@@ -570,9 +640,9 @@ async def transcribe_audio(
     """Transcribe uploaded audio file"""
     audio_bytes = await file.read()
     file_format = file.filename.split('.')[-1].lower() if file.filename else None
-    
+
     transcript = transcribe_audio_deepgram(audio_bytes, file_format, language)
-    
+
     if transcript:
         return {"transcript": transcript, "success": True}
     else:

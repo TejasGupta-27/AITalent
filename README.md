@@ -203,10 +203,10 @@ Both methods use Deepgram AI for transcription, which supports 100+ audio format
 
 **Recommended Setup:**
 - **Frontend**: Deploy on Vercel (free, fast)
-- **Backend**: Deploy on Railway or Render (free tiers available)
+- **Backend**: Deploy on Render (recommended) or Railway (free tiers available)
 
 **Quick Steps:**
-1. Deploy backend on Railway/Render (see `QUICK_DEPLOY.md`)
+1. Deploy backend on Render (see `QUICK_DEPLOY.md`)
 2. Deploy frontend on Vercel (see `QUICK_DEPLOY.md`)
 3. Set `VITE_API_URL` environment variable in Vercel
 4. Update `CORS_ORIGINS` in backend to include Vercel URL
