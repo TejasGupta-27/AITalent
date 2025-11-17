@@ -259,7 +259,10 @@ def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language:
 例：
 - ユーザー: "こんにちは" → あなた: "こんにちは！何かお手伝いできることはありますか？"
 - ユーザー: "東京の天気は？" → あなた: get_weatherツールを使用して天気を取得
-- ユーザー: "今日何する？" → あなた: get_weatherツールを使用（場所がわかる場合）"""
+- ユーザー: "今日何する？" → あなた: get_weatherツールを使用（場所がわかる場合）
+-.英語で返信する必要があります。
+"""
+
     else:
         system_prompt = """You are a friendly and helpful conversational AI assistant. You chat naturally with users and answer their questions.
 
@@ -271,6 +274,7 @@ Important instructions:
 1. **Normal conversation**: For greetings and general questions, respond naturally. Don't force weather into every conversation.
 2. **When to use weather**: Only use the get_weather tool when users ask about weather, activities, what to wear, or plans that depend on weather conditions.
 3. **Be concise**: Keep responses short, friendly, and conversational.
+4. **You must reply in english.
 
 Examples:
 - User: "hi" → You: "Hi! How can I help you today?"
