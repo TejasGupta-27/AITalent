@@ -6,6 +6,7 @@ from typing import Optional, List
 import requests
 from groq import Groq
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -131,7 +132,7 @@ def format_weather_data(weather_data):
     return formatted
 
 
-def transcribe_audio_deepgram(audio_bytes: bytes, audio_format: Optional[str] = None, language: str = "en"):
+def transcribe_audio_deepgram(audio_bytes: bytes, audio_format: Optional[str] = None):
     """
     Transcribe audio using Deepgram API
     Supports 100+ audio formats: MP3, WAV, FLAC, M4A, OGG, OPUS, WEBM, etc.
@@ -219,8 +220,11 @@ def extract_location_from_query(query: str, language: str = "en") -> Optional[st
     return None
 
 
+
+        
+
 def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language: str = "en", auto_fetch_weather: bool = True, chat_history: Optional[List] = None):
-    """Get AI-powered conversational responses with weather tool support"""
+    """Get AI-powered suggestions based on weather with tool calling support"""
 
     # Define the weather tool
     tools = [
@@ -260,9 +264,8 @@ def get_ai_suggestions(weather_data, user_query: Optional[str] = None, language:
 - ユーザー: "こんにちは" → あなた: "こんにちは！何かお手伝いできることはありますか？"
 - ユーザー: "東京の天気は？" → あなた: get_weatherツールを使用して天気を取得
 - ユーザー: "今日何する？" → あなた: get_weatherツールを使用（場所がわかる場合）
--.英語で返信する必要があります。
+- 返信は必ず日本語でお願いします。
 """
-
     else:
         system_prompt = """You are a friendly and helpful conversational AI assistant. You chat naturally with users and answer their questions.
 
@@ -284,62 +287,34 @@ Examples:
     # Build messages with chat history
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Add chat history for context
     if chat_history:
-        for msg in chat_history[-10:]:  # Keep last 10 messages for context
-            messages.append({
-                "role": msg['role'],
-                "content": msg['content']
-            })
+        # Expect chat_history as List[Dict[str,str]] with keys 'role' and 'content'
+        for msg in chat_history[-10:]:
+            messages.append({"role": msg.get('role', 'user'), "content": msg.get('content', '')})
 
-    # Add current weather context if available (as system knowledge, not forcing it into conversation)
-    weather_context = ""
-    if weather_data:
-        location = weather_data['location']
-        current = weather_data['current']
-        weather_context = f"""
-
-[Available weather data for {location['name']}, {location['country']}:
-Temperature: {current['temp_c']}°C (feels like {current['feelslike_c']}°C)
-Condition: {current['condition']['text']}
-Humidity: {current['humidity']}%
-Wind: {current['wind_kph']} km/h
-UV Index: {current['uv']}
-Precipitation: {current['precip_mm']} mm
-Local time: {location['localtime']}]
-"""
-        # Add weather context to system message if there's existing data
-        messages[0]["content"] += weather_context
-
-    # Add user's current query
+    # Prepare prompt when user_query is missing
     if user_query:
-        messages.append({
-            "role": "user",
-            "content": user_query
-        })
+        messages.append({"role": "user", "content": user_query})
     else:
-        # Initial suggestion when weather is first fetched
+        # ensure prompt variable exists
         if language == 'ja':
-            messages.append({
-                "role": "user",
-                "content": "この天気に基づいて、簡単なアクティビティや服装の提案をしてください。"
-            })
+            prompt = "この天気に基づいて、簡単なアクティビティや服装の提案をしてください。"
         else:
-            messages.append({
-                "role": "user",
-                "content": "Based on this weather, give me some quick activity and outfit suggestions."
-            })
-    
+            # include weather context if available below (will be added to messages later)
+            prompt = "Based on this weather, suggest activities, outfit ideas, and outing recommendations for today."
+
+        # We'll build messages with the system + user prompt
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+
     try:
         # Call Groq API with tool support
-        max_iterations = 5  # Increased to allow for tool calls + response
+        max_iterations = 5
         iteration = 0
         final_weather_data = weather_data
-        tool_calls_executed = False  # Track if we've executed tools
+        tool_calls_executed = False 
 
         while iteration < max_iterations:
             try:
-                # After executing tool calls once, disable tool_choice to force final response
                 if auto_fetch_weather and not tool_calls_executed:
                     response = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
@@ -350,7 +325,6 @@ Local time: {location['localtime']}]
                         max_tokens=1000
                     )
                 else:
-                    # Either auto_fetch disabled or we already executed tools - get final response
                     response = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=messages,
@@ -358,38 +332,40 @@ Local time: {location['localtime']}]
                         max_tokens=1000
                     )
             except Exception as tool_error:
-                # If tool calling fails, try without tools
                 if "tool" in str(tool_error).lower() or "function" in str(tool_error).lower():
+                    # fallback to plain completion without tools
                     response = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=messages,
                         temperature=0.7,
                         max_tokens=1000
                     )
-                    auto_fetch_weather = False  # Disable tool calling for this request
+                    auto_fetch_weather = False
                 else:
                     raise tool_error
 
             message = response.choices[0].message
 
-            # Check if the model wants to call a tool
-            if hasattr(message, 'tool_calls') and message.tool_calls and auto_fetch_weather and not tool_calls_executed:
-                # Add assistant's message with tool calls
-                messages.append(message)
+            # Check for tool calls (defensive: message may be dict-like)
+            message_tool_calls = getattr(message, 'tool_calls', None) or (message.get('tool_calls') if isinstance(message, dict) else None)
 
-                # Execute tool calls
-                for tool_call in message.tool_calls:
-                    if tool_call.function.name == "get_weather":
+            if message_tool_calls and auto_fetch_weather and not tool_calls_executed:
+                # Add assistant's message (with tool intent) to history
+                messages.append(message if isinstance(message, dict) else {"role": "assistant", "content": getattr(message, 'content', '')})
+
+                # Execute each tool call
+                for tool_call in message_tool_calls:
+                    # support both attribute and dict style
+                    func_name = getattr(getattr(tool_call, 'function', None), 'name', None) or (tool_call.get('function', {}).get('name') if isinstance(tool_call, dict) else None)
+                    if func_name == "get_weather":
                         import json
-                        args = json.loads(tool_call.function.arguments)
+                        args_raw = getattr(getattr(tool_call, 'function', None), 'arguments', None) or (tool_call.get('function', {}).get('arguments') if isinstance(tool_call, dict) else None)
+                        args = json.loads(args_raw) if args_raw else {}
                         location_name = args.get("location")
-
                         try:
-                            # Fetch weather for the requested location
                             fetched_weather = fetch_weather(location_name)
                             final_weather_data = fetched_weather
 
-                            # Format weather data for the model
                             loc = fetched_weather['location']
                             curr = fetched_weather['current']
                             weather_info = f"""
@@ -403,41 +379,35 @@ Weather in {loc['name']}, {loc['country']}:
 - Local time: {loc['localtime']}
 """
 
-                            # Add tool result to messages
                             messages.append({
                                 "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.function.name,
+                                "tool_call_id": getattr(tool_call, 'id', tool_call.get('id') if isinstance(tool_call, dict) else None),
+                                "name": "get_weather",
                                 "content": weather_info
                             })
                         except Exception as e:
-                            # Add error to messages
                             messages.append({
                                 "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.function.name,
+                                "tool_call_id": getattr(tool_call, 'id', tool_call.get('id') if isinstance(tool_call, dict) else None),
+                                "name": "get_weather",
                                 "content": f"Error fetching weather for {location_name}: {str(e)}"
                             })
 
-                tool_calls_executed = True  # Mark that we've executed tools
+                tool_calls_executed = True
                 iteration += 1
-                continue  # Continue the loop to get the final response
-            
-            # No tool calls - check if we should extract location from query as fallback
-            if not hasattr(message, 'tool_calls') or not message.tool_calls:
-                # Try to extract location from query if no weather data or query mentions a location
-                # Only do this once (iteration == 0) and if tools weren't already executed
-                if user_query and iteration == 0 and not tool_calls_executed and (not weather_data):
-                    extracted_location = extract_location_from_query(user_query, language)
-                    if extracted_location:
-                        try:
-                            fetched_weather = fetch_weather(extracted_location)
-                            final_weather_data = fetched_weather
+                continue
 
-                            # Update context with new weather
-                            loc = fetched_weather['location']
-                            curr = fetched_weather['current']
-                            weather_info = f"""
+            # No tool calls (or already executed) -> maybe extract location fallback
+            if (not message_tool_calls) and user_query and iteration == 0 and not tool_calls_executed and (not weather_data):
+                extracted_location = extract_location_from_query(user_query, language)
+                if extracted_location:
+                    try:
+                        fetched_weather = fetch_weather(extracted_location)
+                        final_weather_data = fetched_weather
+
+                        loc = fetched_weather['location']
+                        curr = fetched_weather['current']
+                        weather_info = f"""
 Weather in {loc['name']}, {loc['country']}:
 - Temperature: {curr['temp_c']}°C (feels like {curr['feelslike_c']}°C)
 - Condition: {curr['condition']['text']}
@@ -448,28 +418,26 @@ Weather in {loc['name']}, {loc['country']}:
 - Local time: {loc['localtime']}
 """
 
-                            # Update the prompt with new weather and ask again
-                            if language == 'ja':
-                                updated_prompt = f"{weather_info}\n\nユーザーの質問: {user_query}\n\n上記の天気を考慮して、詳細な提案を提供してください。"
-                            else:
-                                updated_prompt = f"{weather_info}\n\nUser query: {user_query}\n\nProvide detailed suggestions considering the weather above."
+                        if language == 'ja':
+                            updated_prompt = f"{weather_info}\n\nユーザーの質問: {user_query}\n\n上記の天気を考慮して、詳細な提案を提供してください。"
+                        else:
+                            updated_prompt = f"{weather_info}\n\nUser query: {user_query}\n\nProvide detailed suggestions considering the weather above."
 
-                            messages = [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": updated_prompt}
-                            ]
-                            tool_calls_executed = True  # Mark as executed to prevent further iterations
-                            iteration += 1
-                            continue
-                        except Exception:
-                            pass  # Continue with original weather if extraction fails
-            
-            # No tool calls, return the final response
-            final_response = message.content
-            
-            # Update weather context if we fetched new weather
+                        messages = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": updated_prompt}
+                        ]
+                        tool_calls_executed = True
+                        iteration += 1
+                        continue
+                    except Exception:
+                        pass
+
+            # No more tool calls — return final response
+            final_response = getattr(message, 'content', None) or (message.get('content') if isinstance(message, dict) else None)
+
+            # Update weather context if changed
             if final_weather_data and final_weather_data != weather_data:
-                # Rebuild context with new weather
                 loc = final_weather_data['location']
                 curr = final_weather_data['current']
                 weather_context = f"""
@@ -482,23 +450,23 @@ Current weather in {loc['name']}, {loc['country']}:
 - Precipitation: {curr['precip_mm']} mm
 - Local time: {loc['localtime']}
 """
-            
             return {
                 "content": final_response,
-                "weather_data": final_weather_data  # Return the weather data used (may be updated)
+                "weather_data": final_weather_data
             }
-        
-        # If we hit max iterations, return error
+
+        # If max iterations reached
         return {
             "content": "Error: Maximum iterations reached while processing your request.",
             "weather_data": final_weather_data
         }
-        
+
     except Exception as e:
         return {
             "content": f"Error getting AI suggestions: {str(e)}",
             "weather_data": weather_data
         }
+
 
 
 # API Endpoints
@@ -649,9 +617,9 @@ async def transcribe_audio(
     """Transcribe uploaded audio file"""
     audio_bytes = await file.read()
     file_format = file.filename.split('.')[-1].lower() if file.filename else None
-
+    
     transcript = transcribe_audio_deepgram(audio_bytes, file_format, language)
-
+    
     if transcript:
         return {"transcript": transcript, "success": True}
     else:
