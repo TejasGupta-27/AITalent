@@ -618,7 +618,7 @@ async def transcribe_audio(
     audio_bytes = await file.read()
     file_format = file.filename.split('.')[-1].lower() if file.filename else None
     
-    transcript = transcribe_audio_deepgram(audio_bytes, file_format, language)
+    transcript = transcribe_audio_deepgram(audio_bytes, file_format)
     
     if transcript:
         return {"transcript": transcript, "success": True}
